@@ -128,17 +128,55 @@ Docker needs to be running: integration tests start real PostgreSQL and RabbitMQ
 with Testcontainers. They cover the REST API, outbox publishing, duplicate events and the
 dead letter queue. Coverage reports end up in `target/site/jacoco`.
 
-## CI
+## CI/CD
 
-The `Jenkinsfile` builds and tests both services in parallel, runs SonarQube analysis, waits for
-the quality gate and builds Docker images on `main`.
+```
+Jenkins ─► build & test (parallel) ─► SonarQube + quality gate ─► Nexus (jars, images) ─► Kubernetes
+```
 
-The Jenkins agent needs Docker access for Testcontainers and a SonarQube server configured
-under the name `sonarqube`. To run SonarQube locally:
+The `Jenkinsfile` builds and tests both services in parallel, runs SonarQube analysis and waits for
+the quality gate. On `main` it deploys the jars to Nexus, pushes the Docker images to the Nexus
+Docker registry and rolls them out to Kubernetes with `kubectl set image` + `rollout status`.
+
+The whole toolchain runs locally:
 
 ```bash
-docker compose --profile ci up -d sonarqube
+docker compose --profile ci up -d sonarqube nexus jenkins
 ```
+
+| Tool | URL |
+|---|---|
+| Jenkins | http://localhost:8090 |
+| SonarQube | http://localhost:9000 |
+| Nexus | http://localhost:8091 (Docker registry on `localhost:8083`) |
+
+Jenkins is configured entirely with Configuration as Code (`ci/jenkins/casc.yaml`): plugins,
+credentials, the SonarQube server and the pipeline job. Secrets come from a `.env` file
+(`SONAR_TOKEN`, `NEXUS_USER`, `NEXUS_PASSWORD`, `KUBECONFIG_B64`) that is not committed.
+Testcontainers inside Jenkins uses the host Docker daemon.
+
+## Kubernetes
+
+Manifests live in `k8s/` and are applied with Kustomize. Each service runs with 2 replicas,
+startup/liveness/readiness probes on the Spring Boot actuator health groups, resource requests and
+limits, and configuration from a ConfigMap and a Secret.
+
+```bash
+./k8s/kind-up.sh                         # kind cluster that pulls images from Nexus
+docker compose --profile ci up -d jenkins
+kubectl apply -k k8s
+```
+
+| Service | URL |
+|---|---|
+| order-service | http://localhost:30081 |
+| inventory-service | http://localhost:30082 |
+
+Service discovery is handled by Kubernetes DNS: the apps reach PostgreSQL and RabbitMQ by their
+service names (`orders-db`, `inventory-db`, `rabbitmq`).
+
+The databases and RabbitMQ in `k8s/infrastructure.yaml` run without persistent volumes and are only
+meant for local testing.
 
 ## License
 
