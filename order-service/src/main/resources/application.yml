@@ -9,6 +9,11 @@ spring:
     hibernate:
       ddl-auto: update
     open-in-view: false
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
 
 server:
   port: 8081
@@ -18,3 +23,6 @@ management:
     web:
       exposure:
         include: health,info
+
+outbox:
+  publish-interval: 1000

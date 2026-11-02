@@ -3,8 +3,13 @@ package com.bunyad.orderplatform.order.application;
 import com.bunyad.orderplatform.order.domain.Order;
 import com.bunyad.orderplatform.order.domain.OrderLine;
 import com.bunyad.orderplatform.order.domain.OrderRepository;
+import com.bunyad.orderplatform.order.messaging.MessagingConfig;
+import com.bunyad.orderplatform.order.messaging.OrderConfirmedEvent;
+import com.bunyad.orderplatform.order.outbox.OutboxEvent;
+import com.bunyad.orderplatform.order.outbox.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.UUID;
@@ -13,9 +18,13 @@ import java.util.UUID;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final JsonMapper jsonMapper;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository, OutboxEventRepository outboxEventRepository, JsonMapper jsonMapper) {
         this.orderRepository = orderRepository;
+        this.outboxEventRepository = outboxEventRepository;
+        this.jsonMapper = jsonMapper;
     }
 
     @Transactional
@@ -37,6 +46,14 @@ public class OrderService {
     public Order confirmOrder(UUID id) {
         Order order = getOrder(id);
         order.confirm();
+        outboxEventRepository.save(orderConfirmedEvent(order));
+        return order;
+    }
+
+    @Transactional
+    public Order shipOrder(UUID id) {
+        Order order = getOrder(id);
+        order.ship();
         return order;
     }
 
@@ -45,5 +62,14 @@ public class OrderService {
         Order order = getOrder(id);
         order.cancel();
         return order;
+    }
+
+    private OutboxEvent orderConfirmedEvent(Order order) {
+        UUID eventId = UUID.randomUUID();
+        List<OrderConfirmedEvent.Line> lines = order.getLines().stream()
+                .map(l -> new OrderConfirmedEvent.Line(l.getProductCode(), l.getQuantity()))
+                .toList();
+        String payload = jsonMapper.writeValueAsString(new OrderConfirmedEvent(eventId, order.getId(), lines));
+        return new OutboxEvent(eventId, order.getId(), "OrderConfirmed", MessagingConfig.ORDER_CONFIRMED_ROUTING_KEY, payload);
     }
 }

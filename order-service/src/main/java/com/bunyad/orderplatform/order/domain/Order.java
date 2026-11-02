@@ -72,6 +72,20 @@ public class Order {
         status = OrderStatus.CANCELLED;
     }
 
+    public void ship() {
+        if (status != OrderStatus.CONFIRMED) {
+            throw new IllegalStateException("Only confirmed orders can be shipped, current status: " + status);
+        }
+        status = OrderStatus.SHIPPED;
+    }
+
+    public void markDelivered() {
+        if (status != OrderStatus.SHIPPED) {
+            throw new IllegalStateException("Only shipped orders can be delivered, current status: " + status);
+        }
+        status = OrderStatus.DELIVERED;
+    }
+
     public UUID getId() { return id; }
     public String getCustomerId() { return customerId; }
     public OrderStatus getStatus() { return status; }

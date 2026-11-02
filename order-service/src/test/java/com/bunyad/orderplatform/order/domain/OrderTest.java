@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -54,7 +53,7 @@ class OrderTest {
 
     @ParameterizedTest
     @EnumSource(value = OrderStatus.class, names = {"PENDING", "CONFIRMED"})
-    void cancelsOrderBeforeShipping(OrderStatus status) throws Exception {
+    void cancelsOrderBeforeShipping(OrderStatus status) {
         Order order = orderWithStatus(status);
 
         order.cancel();
@@ -64,11 +63,23 @@ class OrderTest {
 
     @ParameterizedTest
     @EnumSource(value = OrderStatus.class, names = {"SHIPPED", "DELIVERED"})
-    void doesNotCancelShippedOrder(OrderStatus status) throws Exception {
+    void doesNotCancelShippedOrder(OrderStatus status) {
         Order order = orderWithStatus(status);
 
         assertThatThrownBy(order::cancel).isInstanceOf(IllegalStateException.class);
         assertThat(order.getStatus()).isEqualTo(status);
+    }
+
+    @Test
+    void shipsOnlyConfirmedOrder() {
+        Order order = newOrder();
+
+        assertThatThrownBy(order::ship).isInstanceOf(IllegalStateException.class);
+
+        order.confirm();
+        order.ship();
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.SHIPPED);
     }
 
     @Test
@@ -85,11 +96,19 @@ class OrderTest {
         return Order.place("customer-1", List.of(new OrderLine("SKU-1", 1, BigDecimal.TEN)));
     }
 
-    private static Order orderWithStatus(OrderStatus status) throws Exception {
+    private static Order orderWithStatus(OrderStatus status) {
         Order order = newOrder();
-        Field field = Order.class.getDeclaredField("status");
-        field.setAccessible(true);
-        field.set(order, status);
+        if (status == OrderStatus.PENDING) {
+            return order;
+        }
+        order.confirm();
+        if (status == OrderStatus.CONFIRMED) {
+            return order;
+        }
+        order.ship();
+        if (status == OrderStatus.DELIVERED) {
+            order.markDelivered();
+        }
         return order;
     }
 }

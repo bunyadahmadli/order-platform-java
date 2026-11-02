@@ -45,6 +45,11 @@ public class OrderController {
         return OrderResponse.from(orderService.confirmOrder(id));
     }
 
+    @PostMapping("/{id}/ship")
+    public OrderResponse ship(@PathVariable UUID id) {
+        return OrderResponse.from(orderService.shipOrder(id));
+    }
+
     @PostMapping("/{id}/cancel")
     public OrderResponse cancel(@PathVariable UUID id) {
         return OrderResponse.from(orderService.cancelOrder(id));
