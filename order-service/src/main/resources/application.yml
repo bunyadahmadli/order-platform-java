@@ -26,3 +26,4 @@ management:
 
 outbox:
   publish-interval: 1000
+  batch-size: 100

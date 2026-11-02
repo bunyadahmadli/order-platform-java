@@ -7,6 +7,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,16 +21,19 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final int batchSize;
 
-    public OutboxPublisher(OutboxEventRepository outboxEventRepository, RabbitTemplate rabbitTemplate) {
+    public OutboxPublisher(OutboxEventRepository outboxEventRepository, RabbitTemplate rabbitTemplate,
+                           @Value("${outbox.batch-size:100}") int batchSize) {
         this.outboxEventRepository = outboxEventRepository;
         this.rabbitTemplate = rabbitTemplate;
+        this.batchSize = batchSize;
     }
 
     @Scheduled(fixedDelayString = "${outbox.publish-interval}")
     @Transactional
     public void publishPending() {
-        for (OutboxEvent event : outboxEventRepository.findTop100ByPublishedAtIsNullOrderByCreatedAtAsc()) {
+        for (OutboxEvent event : outboxEventRepository.lockNextBatch(batchSize)) {
             try {
                 rabbitTemplate.send(MessagingConfig.ORDER_EVENTS_EXCHANGE, event.getRoutingKey(), toMessage(event));
                 event.markPublished();

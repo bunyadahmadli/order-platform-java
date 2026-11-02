@@ -16,10 +16,17 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -46,6 +53,9 @@ class OutboxIntegrationTest {
 
     @Autowired
     private TopicExchange orderEventsExchange;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     @Test
     void confirmingOrderStoresEventAndPublishesIt() {
@@ -81,5 +91,46 @@ class OutboxIntegrationTest {
         orderService.cancelOrder(order.getId());
 
         assertThat(outboxEventRepository.findByAggregateId(order.getId())).isEmpty();
+    }
+
+    @Test
+    void concurrentPublishersLockDifferentEvents() throws Exception {
+        for (int i = 0; i < 6; i++) {
+            UUID orderId = UUID.randomUUID();
+            outboxEventRepository.save(new OutboxEvent(UUID.randomUUID(), orderId, "Test", "test.ignored", "{}"));
+        }
+        CountDownLatch firstBatchLocked = new CountDownLatch(1);
+        CountDownLatch secondBatchLocked = new CountDownLatch(1);
+
+        CompletableFuture<Set<UUID>> first = CompletableFuture.supplyAsync(() -> transactionTemplate.execute(status -> {
+            Set<UUID> ids = idsOf(outboxEventRepository.lockNextBatch(3));
+            firstBatchLocked.countDown();
+            await(secondBatchLocked);
+            return ids;
+        }));
+        await(firstBatchLocked);
+        Set<UUID> second = transactionTemplate.execute(status -> idsOf(outboxEventRepository.lockNextBatch(3)));
+        secondBatchLocked.countDown();
+
+        Set<UUID> firstIds = first.get(10, TimeUnit.SECONDS);
+        assertThat(firstIds).hasSize(3);
+        assertThat(second).hasSize(3).doesNotContainAnyElementsOf(firstIds);
+    }
+
+    private static Set<UUID> idsOf(List<OutboxEvent> events) {
+        Set<UUID> ids = new HashSet<>();
+        events.forEach(e -> ids.add(e.getId()));
+        return ids;
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for the other transaction");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(ex);
+        }
     }
 }
