@@ -60,7 +60,7 @@ pipeline {
 
         stage('Docker Images') {
             when {
-                branch 'main'
+                expression { env.GIT_BRANCH == 'origin/main' || env.BRANCH_NAME == 'main' }
             }
             steps {
                 sh 'docker build -t order-platform/order-service:${IMAGE_TAG} order-service'
