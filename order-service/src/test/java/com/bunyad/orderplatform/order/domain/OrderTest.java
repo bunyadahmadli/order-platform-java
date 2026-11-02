@@ -85,6 +85,45 @@ class OrderTest {
     }
 
     @Test
+    void rejectsConfirmedOrderWithReason() {
+        Order order = newOrder();
+        order.confirm();
+
+        order.reject("Insufficient stock");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(order.getRejectionReason()).isEqualTo("Insufficient stock");
+    }
+
+    @Test
+    void rejectingTwiceIsIdempotent() {
+        Order order = newOrder();
+        order.confirm();
+        order.reject("first");
+
+        order.reject("second");
+
+        assertThat(order.getRejectionReason()).isEqualTo("first");
+    }
+
+    @Test
+    void ignoresRejectionOfCancelledOrder() {
+        Order order = newOrder();
+        order.cancel();
+
+        order.reject("Insufficient stock");
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void doesNotRejectPendingOrder() {
+        Order order = newOrder();
+
+        assertThatThrownBy(() -> order.reject("Insufficient stock")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void cancellingTwiceIsIdempotent() {
         Order order = newOrder();
         order.cancel();

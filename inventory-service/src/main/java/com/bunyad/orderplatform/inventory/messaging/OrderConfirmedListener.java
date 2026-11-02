@@ -24,10 +24,10 @@ public class OrderConfirmedListener {
     @RabbitListener(queues = MessagingConfig.ORDER_CONFIRMED_QUEUE)
     public void onOrderConfirmed(Message message) {
         OrderConfirmedEvent event = jsonMapper.readValue(message.getBody(), OrderConfirmedEvent.class);
-        if (inventoryService.reserveFor(event)) {
-            log.info("Reserved stock for order {}", event.orderId());
-        } else {
-            log.info("Event {} already processed, skipping", event.eventId());
+        switch (inventoryService.reserveFor(event)) {
+            case RESERVED -> log.info("Reserved stock for order {}", event.orderId());
+            case REJECTED -> log.info("Stock reservation failed for order {}", event.orderId());
+            case DUPLICATE -> log.info("Event {} already processed, skipping", event.eventId());
         }
     }
 }

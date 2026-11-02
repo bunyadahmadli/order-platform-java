@@ -30,6 +30,8 @@ public class Order {
     @Column(nullable = false)
     private Instant createdAt;
 
+    private String rejectionReason;
+
     @Version
     private long version;
 
@@ -63,13 +65,24 @@ public class Order {
     }
 
     public void cancel() {
-        if (status == OrderStatus.CANCELLED) {
+        if (status == OrderStatus.CANCELLED || status == OrderStatus.REJECTED) {
             return;
         }
         if (status == OrderStatus.SHIPPED || status == OrderStatus.DELIVERED) {
             throw new IllegalStateException("Order cannot be cancelled after it has been shipped, current status: " + status);
         }
         status = OrderStatus.CANCELLED;
+    }
+
+    public void reject(String reason) {
+        if (status == OrderStatus.REJECTED || status == OrderStatus.CANCELLED) {
+            return;
+        }
+        if (status != OrderStatus.CONFIRMED) {
+            throw new IllegalStateException("Only confirmed orders can be rejected, current status: " + status);
+        }
+        status = OrderStatus.REJECTED;
+        rejectionReason = reason;
     }
 
     public void ship() {
@@ -91,4 +104,5 @@ public class Order {
     public OrderStatus getStatus() { return status; }
     public List<OrderLine> getLines() { return Collections.unmodifiableList(lines); }
     public Instant getCreatedAt() { return createdAt; }
+    public String getRejectionReason() { return rejectionReason; }
 }

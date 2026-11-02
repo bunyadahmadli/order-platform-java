@@ -3,9 +3,13 @@ package com.bunyad.orderplatform.inventory.messaging;
 import com.bunyad.orderplatform.inventory.TestcontainersConfiguration;
 import com.bunyad.orderplatform.inventory.application.InventoryService;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +31,12 @@ class OrderConfirmedListenerIntegrationTest {
 
     @Autowired
     private InventoryService inventoryService;
+
+    @Autowired
+    private AmqpAdmin amqpAdmin;
+
+    @Autowired
+    private TopicExchange inventoryEventsExchange;
 
     @Test
     void decreasesStockWhenOrderIsConfirmed() {
@@ -54,23 +64,62 @@ class OrderConfirmedListenerIntegrationTest {
     }
 
     @Test
-    void sendsEventToDeadLetterQueueWhenStockIsInsufficient() {
+    void publishesCompensatingEventWhenStockIsInsufficient() {
+        Queue failures = new Queue("test.stock-reservation-failed", false, false, true);
+        amqpAdmin.declareQueue(failures);
+        amqpAdmin.declareBinding(BindingBuilder.bind(failures).to(inventoryEventsExchange)
+                .with(MessagingConfig.STOCK_RESERVATION_FAILED_ROUTING_KEY));
         inventoryService.setStock("SKU-C", 1);
+        UUID orderId = UUID.randomUUID();
 
-        publish(UUID.randomUUID(), "SKU-C", 5);
+        publish(UUID.randomUUID(), orderId, "SKU-C", 5);
+
+        Message failed = rabbitTemplate.receive("test.stock-reservation-failed", 15_000);
+        assertThat(failed).isNotNull();
+        assertThat(new String(failed.getBody(), StandardCharsets.UTF_8))
+                .contains(orderId.toString())
+                .contains("Insufficient stock for SKU-C");
+        assertThat(stockOf("SKU-C")).isEqualTo(1);
+    }
+
+    @Test
+    void doesNotTouchStockWhenOneOfTheProductsIsUnknown() {
+        inventoryService.setStock("SKU-D", 10);
+        String json = """
+                {"eventId":"%s","orderId":"%s","lines":[
+                  {"productCode":"SKU-D","quantity":2},
+                  {"productCode":"SKU-MISSING","quantity":1}]}
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
+
+        send(json, UUID.randomUUID());
+
+        await().during(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(stockOf("SKU-D")).isEqualTo(10));
+    }
+
+    @Test
+    void sendsMalformedMessageToDeadLetterQueue() {
+        send("not json", UUID.randomUUID());
 
         Message dead = rabbitTemplate.receive(MessagingConfig.ORDER_CONFIRMED_DLQ, 10_000);
         assertThat(dead).isNotNull();
-        assertThat(inventoryService.getStock("SKU-C").getAvailableQuantity()).isEqualTo(1);
     }
 
     private void publish(UUID eventId, String productCode, int quantity) {
+        publish(eventId, UUID.randomUUID(), productCode, quantity);
+    }
+
+    private void publish(UUID eventId, UUID orderId, String productCode, int quantity) {
         String json = """
                 {"eventId":"%s","orderId":"%s","lines":[{"productCode":"%s","quantity":%d}]}
-                """.formatted(eventId, UUID.randomUUID(), productCode, quantity);
+                """.formatted(eventId, orderId, productCode, quantity);
+        send(json, eventId);
+    }
+
+    private void send(String json, UUID messageId) {
         Message message = MessageBuilder.withBody(json.getBytes(StandardCharsets.UTF_8))
                 .setContentType(MessageProperties.CONTENT_TYPE_JSON)
-                .setMessageId(eventId.toString())
+                .setMessageId(messageId.toString())
                 .build();
         rabbitTemplate.send(MessagingConfig.ORDER_EVENTS_EXCHANGE, MessagingConfig.ORDER_CONFIRMED_ROUTING_KEY, message);
     }

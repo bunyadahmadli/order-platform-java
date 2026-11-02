@@ -40,6 +40,7 @@ public final class OrderDtos {
             OrderStatus status,
             List<OrderLineResponse> lines,
             BigDecimal totalAmount,
+            String rejectionReason,
             Instant createdAt) {
 
         static OrderResponse from(Order order) {
@@ -47,7 +48,7 @@ public final class OrderDtos {
                     .map(l -> new OrderLineResponse(l.getProductCode(), l.getQuantity(), l.getUnitPrice(), l.lineTotal()))
                     .toList();
             return new OrderResponse(order.getId(), order.getCustomerId(), order.getStatus(),
-                    lines, order.totalAmount(), order.getCreatedAt());
+                    lines, order.totalAmount(), order.getRejectionReason(), order.getCreatedAt());
         }
     }
 }

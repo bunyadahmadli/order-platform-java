@@ -51,6 +51,13 @@ public class OrderService {
     }
 
     @Transactional
+    public Order rejectOrder(UUID id, String reason) {
+        Order order = findOrder(id);
+        order.reject(reason);
+        return order;
+    }
+
+    @Transactional
     public Order shipOrder(UUID id) {
         Order order = findOrder(id);
         order.ship();

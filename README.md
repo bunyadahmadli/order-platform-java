@@ -27,8 +27,13 @@ idempotent consumers, integration tests against real infrastructure) in the Java
   event is never lost if the broker is down or the app crashes between the two steps.
 - **Idempotent consumer.** The outbox gives at-least-once delivery, so the inventory service
   records every processed `eventId` and skips duplicates.
-- **Dead letter queue.** Events that can't be processed (unknown product, insufficient stock) go to
-  `inventory.order-confirmed.dlq` instead of being retried forever.
+- **Saga with a compensating event.** If the stock can't be reserved (unknown product or not enough
+  stock), inventory leaves the stock untouched and publishes `StockReservationFailed` through its own
+  outbox. order-service listens to it and moves the order to `REJECTED` with the reason.
+- **`SKIP LOCKED` outbox polling.** Each publisher locks its batch with `FOR UPDATE SKIP LOCKED`, so
+  several replicas can poll the same table without publishing the same event twice.
+- **Dead letter queues.** Messages that can't be processed at all (malformed payload, unknown order)
+  go to a DLQ instead of being retried forever.
 - **Optimistic locking** with `@Version` on both aggregates.
 
 ## Tech stack
@@ -46,13 +51,17 @@ idempotent consumers, integration tests against real infrastructure) in the Java
 
 ```
 PENDING ──confirm──► CONFIRMED ──ship──► SHIPPED ──deliver──► DELIVERED
-   │                     │
-   └──────cancel─────────┴──► CANCELLED
+   │                     │   │
+   └──────cancel─────────┘   └──stock reservation failed──► REJECTED
+              ▼
+          CANCELLED
 ```
 
 - Orders can be cancelled until they are shipped.
 - Cancelling an already cancelled order is a no-op, so clients can safely retry.
 - Invalid transitions return `409 Conflict`.
+- A confirmed order is rejected automatically when inventory can't reserve its stock; the reason is
+  returned in `rejectionReason`.
 
 ## Running it
 
@@ -93,6 +102,8 @@ curl -X POST localhost:8081/api/orders/{id}/confirm
 
 # stock is now 46
 curl localhost:8082/api/stock/SKU-100
+
+# order more than available: the order ends up REJECTED and the stock stays at 46
 ```
 
 ## API
