@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  orders-username: orders
+  orders-password: orders
+  inventory-username: inventory
+  inventory-password: inventory
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+data:
+  SPRING_RABBITMQ_HOST: rabbitmq
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"

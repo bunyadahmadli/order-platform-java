@@ -98,6 +98,25 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy to Kubernetes') {
+            when {
+                expression { env.GIT_BRANCH == 'origin/main' || env.BRANCH_NAME == 'main' }
+            }
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh 'kubectl apply -k k8s'
+                    script {
+                        ['order-service', 'inventory-service'].each { service ->
+                            sh "kubectl -n order-platform set image deployment/${service} ${service}=${REGISTRY}/order-platform/${service}:${IMAGE_TAG}"
+                        }
+                        ['order-service', 'inventory-service'].each { service ->
+                            sh "kubectl -n order-platform rollout status deployment/${service} --timeout=180s"
+                        }
+                    }
+                }
+            }
+        }
     }
 
     post {

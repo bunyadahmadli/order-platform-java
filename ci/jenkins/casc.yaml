@@ -24,6 +24,11 @@ credentials:
               username: "${NEXUS_USER:-admin}"
               password: "${NEXUS_PASSWORD:-changeme}"
               description: "Nexus repository credentials"
+          - file:
+              id: "kubeconfig"
+              fileName: "config"
+              secretBytes: "${KUBECONFIG_B64:-e30K}"
+              description: "kind cluster kubeconfig"
 
 unclassified:
   sonarGlobalConfiguration:

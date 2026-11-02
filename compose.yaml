@@ -83,6 +83,7 @@ services:
       SONAR_TOKEN: ${SONAR_TOKEN:-}
       NEXUS_USER: ${NEXUS_USER:-admin}
       NEXUS_PASSWORD: ${NEXUS_PASSWORD:-}
+      KUBECONFIG_B64: ${KUBECONFIG_B64:-e30K}
       TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
