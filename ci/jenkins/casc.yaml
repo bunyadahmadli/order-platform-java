@@ -19,6 +19,11 @@ credentials:
               id: "sonar-token"
               secret: "${SONAR_TOKEN:-changeme}"
               description: "SonarQube analysis token"
+          - usernamePassword:
+              id: "nexus"
+              username: "${NEXUS_USER:-admin}"
+              password: "${NEXUS_PASSWORD:-changeme}"
+              description: "Nexus repository credentials"
 
 unclassified:
   sonarGlobalConfiguration:
