@@ -13,11 +13,10 @@ import org.springframework.context.annotation.Import;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -30,32 +29,32 @@ class OrderConfirmedListenerIntegrationTest {
     private InventoryService inventoryService;
 
     @Test
-    void decreasesStockWhenOrderIsConfirmed() throws InterruptedException {
+    void decreasesStockWhenOrderIsConfirmed() {
         inventoryService.setStock("SKU-A", 10);
 
         publish(UUID.randomUUID(), "SKU-A", 3);
 
-        waitUntil(() -> inventoryService.getStock("SKU-A").getAvailableQuantity() == 7);
+        awaitStock("SKU-A", 7);
     }
 
     @Test
-    void ignoresDuplicateEvent() throws InterruptedException {
+    void ignoresDuplicateEvent() {
         inventoryService.setStock("SKU-B", 10);
         UUID eventId = UUID.randomUUID();
 
         publish(eventId, "SKU-B", 2);
-        waitUntil(() -> inventoryService.getStock("SKU-B").getAvailableQuantity() == 8);
+        awaitStock("SKU-B", 8);
 
         publish(eventId, "SKU-B", 2);
         publish(UUID.randomUUID(), "SKU-B", 1);
 
-        waitUntil(() -> inventoryService.getStock("SKU-B").getAvailableQuantity() == 7);
-        Thread.sleep(500);
-        assertThat(inventoryService.getStock("SKU-B").getAvailableQuantity()).isEqualTo(7);
+        awaitStock("SKU-B", 7);
+        await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertThat(stockOf("SKU-B")).isEqualTo(7));
     }
 
     @Test
-    void sendsEventToDeadLetterQueueWhenStockIsInsufficient() throws InterruptedException {
+    void sendsEventToDeadLetterQueueWhenStockIsInsufficient() {
         inventoryService.setStock("SKU-C", 1);
 
         publish(UUID.randomUUID(), "SKU-C", 5);
@@ -76,14 +75,12 @@ class OrderConfirmedListenerIntegrationTest {
         rabbitTemplate.send(MessagingConfig.ORDER_EVENTS_EXCHANGE, MessagingConfig.ORDER_CONFIRMED_ROUTING_KEY, message);
     }
 
-    private static void waitUntil(BooleanSupplier condition) throws InterruptedException {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(10));
-        while (Instant.now().isBefore(deadline)) {
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(100);
-        }
-        throw new AssertionError("Condition not met within 10 seconds");
+    private void awaitStock(String productCode, int expected) {
+        await().atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> assertThat(stockOf(productCode)).isEqualTo(expected));
+    }
+
+    private int stockOf(String productCode) {
+        return inventoryService.getStock(productCode).getAvailableQuantity();
     }
 }

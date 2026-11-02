@@ -34,7 +34,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public Order getOrder(UUID id) {
-        return orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
+        return findOrder(id);
     }
 
     @Transactional(readOnly = true)
@@ -44,7 +44,7 @@ public class OrderService {
 
     @Transactional
     public Order confirmOrder(UUID id) {
-        Order order = getOrder(id);
+        Order order = findOrder(id);
         order.confirm();
         outboxEventRepository.save(orderConfirmedEvent(order));
         return order;
@@ -52,16 +52,20 @@ public class OrderService {
 
     @Transactional
     public Order shipOrder(UUID id) {
-        Order order = getOrder(id);
+        Order order = findOrder(id);
         order.ship();
         return order;
     }
 
     @Transactional
     public Order cancelOrder(UUID id) {
-        Order order = getOrder(id);
+        Order order = findOrder(id);
         order.cancel();
         return order;
+    }
+
+    private Order findOrder(UUID id) {
+        return orderRepository.findById(id).orElseThrow(() -> new OrderNotFoundException(id));
     }
 
     private OutboxEvent orderConfirmedEvent(Order order) {

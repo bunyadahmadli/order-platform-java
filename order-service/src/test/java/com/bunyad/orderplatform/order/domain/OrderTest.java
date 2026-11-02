@@ -24,7 +24,9 @@ class OrderTest {
 
     @Test
     void rejectsOrderWithoutLines() {
-        assertThatThrownBy(() -> Order.place("customer-1", List.of()))
+        List<OrderLine> noLines = List.of();
+
+        assertThatThrownBy(() -> Order.place("customer-1", noLines))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
