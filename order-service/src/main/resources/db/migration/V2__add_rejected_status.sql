@@ -1,0 +1,5 @@
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR(255);
+
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_check
+    CHECK (status IN ('PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REJECTED'));
